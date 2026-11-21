@@ -1,0 +1,47 @@
+name: RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 3600
+
+    steps:
+      - name: Configure Core RDP Settings
+        run |
+          # Habilita o Remote Desktop e desativa a autenticação de nível de rede
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+          -Name "fDenyTSConnections" -Value 0 -Force
+          
+          # Permite conexões na porta 3389
+          netsh advfirewall firewall add rule name="RDP-Tailscale" `
+          dir=in action=allow protocol=TCP localport=3389
+          
+          # Reinicia o serviço do Remote Desktop
+          Restart-Service -Name TermService -Force
+      
+      - name: Create RDP User with Secure Password
+        run |
+          # Cria um usuário e senha seguros para o PC virtual
+          $charSet = @{
+            Upper = [char[]](65..90)
+            Lower = [char[]](97..122)
+            Number = [char[]](48..57)
+            Special = ([char[]](33..47) + [char[]](58..64) + [char[]](91..96) + [char[]](123..126))
+          }
+          
+          # Gera uma senha aleatória
+          $rawPassword = @()
+          $rawPassword += $charSet.Upper | Get-Random -Count 4
+          $rawPassword += $charSet.Lower | Get-Random -Count 4
+          $rawPassword += $charSet.Number | Get-Random -Count 4
+          $rawPassword += $charSet.Special | Get-Random -Count 4
+          
+          $password = -join ($rawPassword | Sort-Object { Get-Random })
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          
+          # Cria o usuário
+          New-LocalUser -Name "VirtualPCUser" -Password $securePass -FullName "Virtual PC User" -UserMayNotChangePassword
+          Add-LocalGroupMember -Group "Administrators" -Member "VirtualPCUser"
